@@ -8,10 +8,10 @@ import com.hmdp.entity.Shop;
 import com.hmdp.mapper.ShopMapper;
 import com.hmdp.service.IShopService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.hmdp.service.ShopCacheAsyncService;
 import com.hmdp.utils.RedisData;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,14 +37,8 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
 
     @Resource
     private StringRedisTemplate stringRedisTemplate;
-
-    @Async("taskExecutor")
-    public void asyncRebuildCache(Long id, String lockKey) {
-        //异步刷新缓存
-        rebuildShopCacheWithExpireSeconds(id);
-        //释放锁
-        unLock(lockKey);
-    }
+    @Resource
+    private ShopCacheAsyncService shopCacheAsyncService;
 
     /**
      * 根据id查询商铺信息
@@ -83,7 +77,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
                     return shop;
                 }
                 //成功就异步刷新,并将锁交给新线程
-                asyncRebuildCache(id, lockKey);
+                shopCacheAsyncService.rebuildShopCacheAsync(id, lockKey);
                 return shop;
             }
         }
