@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import java.time.LocalDateTime;
+import java.util.function.Function;
 
 import static com.hmdp.utils.RedisConstants.CACHE_SHOP_KEY;
 import static com.hmdp.utils.RedisConstants.CACHE_SHOP_TTL;
@@ -23,14 +24,12 @@ public class ShopCacheAsyncService {
 
     @Resource
     private StringRedisTemplate stringRedisTemplate;
-    @Resource
-    private ShopMapper shopMapper;
     @Async("taskExecutor")
-    public void rebuildShopCacheAsync(Long id, String lockKey) {
+    public <R,Id> void rebuildShopCacheAsync(Id id, Class<R> type, Function<Id,R> dbFallBack, String lockKey) {
         try {
             sleep(3000);
-            Shop shop = shopMapper.selectById(id);
-            RedisData redisData = new RedisData(LocalDateTime.now().plusMinutes(CACHE_SHOP_TTL), shop);
+            R r = dbFallBack.apply(id);
+            RedisData redisData = new RedisData(LocalDateTime.now().plusMinutes(CACHE_SHOP_TTL), r);
             stringRedisTemplate.opsForValue().set(CACHE_SHOP_KEY + id, JSONUtil.toJsonStr(redisData));
         }
         catch (InterruptedException e){
