@@ -1,9 +1,6 @@
-package com.hmdp.service;
+package com.hmdp.utils;
 
 import cn.hutool.json.JSONUtil;
-import com.hmdp.entity.Shop;
-import com.hmdp.mapper.ShopMapper;
-import com.hmdp.utils.RedisData;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Async;
@@ -20,12 +17,12 @@ import static java.lang.Thread.sleep;
 // 新建独立的异步缓存服务
 @Slf4j
 @Service
-public class ShopCacheAsyncService {
+public class CacheTaskAsyncUtils {
 
     @Resource
     private StringRedisTemplate stringRedisTemplate;
-    @Async("taskExecutor")
-    public <R,Id> void rebuildShopCacheAsync(Id id, Class<R> type, Function<Id,R> dbFallBack, String lockKey) {
+    @Async("cacheExecutor")
+    public <R,Id> void rebuildCacheAsync(Id id, Class<R> type, Function<Id,R> dbFallBack, String lockKey) {
         try {
             sleep(3000);
             R r = dbFallBack.apply(id);
