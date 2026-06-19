@@ -4,10 +4,6 @@ import cn.hutool.core.lang.UUID;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
-import org.springframework.data.redis.core.script.RedisScript;
-import org.springframework.lang.Nullable;
-
-import java.util.Collection;
 import java.util.Collections;
 import java.util.concurrent.TimeUnit;
 
@@ -36,7 +32,7 @@ public class SimpleRedisLock implements ILock{
         return Boolean.TRUE.equals(success);
     }
     @Override
-    public void unLock() {
+    public void unlock() {
         //调用Lua脚本
         stringRedisTemplate.execute(UNLOCK_SCRIPT,
                 Collections.singletonList(KEY_Prefix+name),
@@ -45,7 +41,7 @@ public class SimpleRedisLock implements ILock{
     }
 
     /*@Override
-    public void unLock() {
+    public void unlock() {
         String threadId=ID_PREFIX+Thread.currentThread().getId();
         String id = stringRedisTemplate.opsForValue().get(KEY_Prefix + name);
         if(threadId.equals(id)){

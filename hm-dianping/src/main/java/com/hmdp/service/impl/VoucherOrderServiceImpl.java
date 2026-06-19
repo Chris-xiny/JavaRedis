@@ -10,6 +10,8 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.utils.RedisIdWorker;
 import com.hmdp.utils.SimpleRedisLock;
 import com.hmdp.utils.UserHolder;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -35,14 +37,16 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     private final ISeckillVoucherService seckillVoucherService;
     private final IVoucherOrderService selfProxy;
     private final StringRedisTemplate stringRedisTemplate;
+    private final RedissonClient redissonClient;
 
     @Lazy
     @Autowired
-    public VoucherOrderServiceImpl(RedisIdWorker redisIdWorker, ISeckillVoucherService seckillVoucherService, IVoucherOrderService selfProxy, StringRedisTemplate stringRedisTemplate) {
+    public VoucherOrderServiceImpl(RedisIdWorker redisIdWorker, ISeckillVoucherService seckillVoucherService, IVoucherOrderService selfProxy, StringRedisTemplate stringRedisTemplate, RedissonClient redissonClient) {
         this.redisIdWorker = redisIdWorker;
         this.seckillVoucherService = seckillVoucherService;
         this.selfProxy = selfProxy;
         this.stringRedisTemplate = stringRedisTemplate;
+        this.redissonClient = redissonClient;
     }
 
     @Override
@@ -62,15 +66,17 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         if (voucher.getStock() < 1) {
             return Result.fail("库存不足!");
         }
-        SimpleRedisLock simpleRedisLock=new SimpleRedisLock("order"+userId,stringRedisTemplate);
-        boolean isLock = simpleRedisLock.tryLock(1200);
+        //SimpleRedisLock lock=new SimpleRedisLock("order"+userId,stringRedisTemplate);
+        RLock lock = redissonClient.getLock("lock:order" + userId);
+        //获取锁
+        boolean isLock = lock.tryLock();
         if(!isLock){
             return Result.fail("禁止重复下单!");
         }
         try{
             return selfProxy.doSeckill(voucherId);
         }finally {
-            simpleRedisLock.unLock();
+            lock.unlock();
         }
     }
 
