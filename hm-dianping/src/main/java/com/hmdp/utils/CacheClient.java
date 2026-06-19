@@ -16,7 +16,6 @@ import java.util.function.Function;
 import static com.hmdp.utils.RedisConstants.*;
 import static java.lang.Thread.sleep;
 
-@Lazy
 @Slf4j
 @Component
 public class CacheClient {
