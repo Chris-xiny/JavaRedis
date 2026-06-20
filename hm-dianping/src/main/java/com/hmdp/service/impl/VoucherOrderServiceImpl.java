@@ -1,5 +1,6 @@
 package com.hmdp.service.impl;
 
+import cn.hutool.core.lang.UUID;
 import com.hmdp.dto.Result;
 import com.hmdp.entity.SeckillVoucher;
 import com.hmdp.entity.VoucherOrder;
@@ -7,6 +8,7 @@ import com.hmdp.mapper.VoucherOrderMapper;
 import com.hmdp.service.ISeckillVoucherService;
 import com.hmdp.service.IVoucherOrderService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.hmdp.utils.AsyncTaskUtils;
 import com.hmdp.utils.RedisIdWorker;
 import com.hmdp.utils.SimpleRedisLock;
 import com.hmdp.utils.UserHolder;
@@ -14,12 +16,19 @@ import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
 import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingDeque;
+import java.util.concurrent.BlockingQueue;
 
 /**
  * <p>
@@ -38,6 +47,8 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     private final IVoucherOrderService selfProxy;
     private final StringRedisTemplate stringRedisTemplate;
     private final RedissonClient redissonClient;
+    @Resource
+    private AsyncTaskUtils asyncTaskUtils;
 
     @Lazy
     @Autowired
@@ -49,7 +60,70 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         this.redissonClient = redissonClient;
     }
 
+    private static final DefaultRedisScript<Long> SECKILL_SCRIPT;
+
+    static {
+        SECKILL_SCRIPT = new DefaultRedisScript<>();
+        SECKILL_SCRIPT.setLocation(new ClassPathResource("seckill.lua"));
+        SECKILL_SCRIPT.setResultType(Long.class);
+    }
+
+    //阻塞队列
+    private final BlockingQueue<VoucherOrder> blockingDeque=new ArrayBlockingQueue<>(1024*1024);
+
+    //优惠券秒杀优化版:用Redis配合lua脚本判断库存及一人一单
     @Override
+    public Result seckillVoucher(Long voucherId) {
+        //1.执行lua脚本
+        Long userId = UserHolder.getUser().getId();
+        Long result = stringRedisTemplate.execute(
+                SECKILL_SCRIPT,
+                Collections.emptyList(),
+                voucherId.toString(), userId.toString()
+        );
+        //2.判断结果为0
+        int r = result.intValue();
+        if (r != 0) {
+            //2.1.不为0，代表没有资格购买
+            return Result.fail(r==1?"库存不足!":"不能重复购买!");
+        }
+        //2.2.为0，有购买资格，将订单信息保存到阻塞队列
+        //3.创建订单
+        VoucherOrder order = new VoucherOrder();
+        //3.1.订单id
+        Long orderId = redisIdWorker.nextId("order");
+        order.setId(orderId);
+        //3.2.秒杀卷id
+        order.setVoucherId(voucherId);
+        //3.3.用户id
+        order.setUserId(userId);
+        //4.保存阻塞队列
+        blockingDeque.add(order);
+        //5.交给其他线程异步处理订单信息
+        asyncTaskUtils.voucherOrderHandleAsync(order,selfProxy);
+        //6.返回订单信息
+        return Result.ok(orderId);
+    }
+
+    @Transactional
+    @Override
+    public void voucherOrderHandle(VoucherOrder order) {
+        //5.1.扣减库存
+        boolean success = seckillVoucherService.update()
+                .setSql("stock=stock-1")
+                .eq("voucher_id", order.getVoucherId())
+                .gt("stock", 0)
+                .update();
+        if (!success) {
+            log.error("库存不足!");
+            return;
+        }
+        //5.2.保存订单到数据库
+        selfProxy.save(order);
+    }
+
+    //优惠券秒杀
+    /*@Override
     public Result seckillVoucher(Long voucherId) {
         Long userId = UserHolder.getUser().getId();
         //1.查询优惠卷
@@ -78,7 +152,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         }finally {
             lock.unlock();
         }
-    }
+    }*/
 
     @Transactional
     @Override

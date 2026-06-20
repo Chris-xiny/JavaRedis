@@ -12,6 +12,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 @EnableAsync
 public class AsyncConfig {
 
+    //Redis缓存刷新线程池
     @Bean("cacheExecutor")
     public Executor cacheExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
@@ -24,6 +25,21 @@ public class AsyncConfig {
         executor.initialize();
         return executor;
     }
+    //Redis订单处理线程池
+    @Bean("voucherOrderExecutor")
+    public Executor orderExecutor(){
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(50);                // 核心线程数
+        executor.setMaxPoolSize(100);                 // 最大线程数
+        executor.setQueueCapacity(500);              // 队列容量
+        executor.setKeepAliveSeconds(10);            // 空闲线程存活时间（秒）
+        executor.setThreadNamePrefix("async-order-"); // 线程名前缀
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy()); // 拒绝策略
+        executor.initialize();
+        return executor;
+    }
+
+    //其他业务线程池
     @Bean("taskExecutor")
     public Executor taskExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();

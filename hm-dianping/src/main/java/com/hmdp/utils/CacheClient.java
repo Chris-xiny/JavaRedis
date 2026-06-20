@@ -4,7 +4,6 @@ import cn.hutool.core.util.BooleanUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.annotation.Lazy;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
@@ -23,7 +22,7 @@ public class CacheClient {
     @Resource
     private StringRedisTemplate stringRedisTemplate;
     @Resource
-    private CacheTaskAsyncUtils cacheTaskAsyncUtils;
+    private AsyncTaskUtils asyncTaskUtils;
 
     //用互斥锁解决缓存穿透
     public <R,Id> R queryWithMutex(String keyPrefix, String lockPrefix,Id id,Class<R> type,Function<Id,R> dbFallBack,Long ExpireSeconds,Long lockTTLSeconds ){
@@ -106,7 +105,7 @@ public class CacheClient {
                     return r;
                 }
                 //成功就异步刷新,并将锁交给新线程
-                cacheTaskAsyncUtils.rebuildCacheAsync(id,type,dbFallBack,lockKey);
+                asyncTaskUtils.rebuildCacheAsync(id,type,dbFallBack,lockKey);
                 return r;
             }
         }

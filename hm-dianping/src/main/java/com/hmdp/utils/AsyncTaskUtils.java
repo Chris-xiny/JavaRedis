@@ -1,0 +1,58 @@
+package com.hmdp.utils;
+
+import cn.hutool.json.JSONUtil;
+import com.hmdp.dto.Result;
+import com.hmdp.entity.VoucherOrder;
+import com.hmdp.service.ISeckillVoucherService;
+import com.hmdp.service.IVoucherOrderService;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.stereotype.Component;
+
+import javax.annotation.Resource;
+import java.time.LocalDateTime;
+import java.util.function.Function;
+
+import static com.hmdp.utils.RedisConstants.CACHE_SHOP_KEY;
+import static com.hmdp.utils.RedisConstants.CACHE_SHOP_TTL;
+import static java.lang.Thread.sleep;
+
+//这是Spring提供的SimpleAsyncTaskExecutor默认兜底线程池
+//每提交 1 个任务就新建 1 个线程，无池化，因此仅在该项目测试用
+@Slf4j
+@Component
+public class AsyncTaskUtils {
+
+    @Resource
+    private StringRedisTemplate stringRedisTemplate;
+
+
+    //Redis缓存刷新线程池
+    @Async("cacheExecutor")
+    public <R, Id> void rebuildCacheAsync(Id id, Class<R> type, Function<Id, R> dbFallBack, String lockKey) {
+        try {
+            sleep(3000);
+            R r = dbFallBack.apply(id);
+            RedisData redisData = new RedisData(LocalDateTime.now().plusMinutes(CACHE_SHOP_TTL), r);
+            stringRedisTemplate.opsForValue().set(CACHE_SHOP_KEY + id, JSONUtil.toJsonStr(redisData));
+        } catch (InterruptedException e) {
+            throw new RuntimeException();
+        } finally {
+            // 无论重建是否成功，保证锁一定会释放
+            stringRedisTemplate.delete(lockKey);
+        }
+    }
+
+    //订单处理线程池
+    @Async("voucherOrderExecutor")
+    public void voucherOrderHandleAsync(VoucherOrder order, IVoucherOrderService selfProxy) {
+        selfProxy.voucherOrderHandle(order);
+    }
+
+    //单元测试线程池
+    @Async("taskExecutor")
+    public <R, S> void Task(Function<S, R> task, S s) {
+        task.apply(s);
+    }
+}

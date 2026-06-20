@@ -1,7 +1,7 @@
 package com.hmdp;
 
+import com.hmdp.utils.AsyncTaskUtils;
 import com.hmdp.utils.RedisIdWorker;
-import com.hmdp.utils.TaskAsyncUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,7 +21,7 @@ class HmDianPingApplicationTests {
     @Resource
     private RedisIdWorker redisIdWorker;
     @Resource
-    private TaskAsyncUtils taskAsyncUtils;
+    private AsyncTaskUtils asyncTaskUtils;
     @Resource
     private RedissonClient redissonClient;
     @Resource
@@ -76,7 +76,7 @@ class HmDianPingApplicationTests {
         Long start =System.currentTimeMillis();
         CountDownLatch latch = new CountDownLatch(300);
         for (int i = 0; i < 300; i++) {
-            taskAsyncUtils.Task(key->{
+            asyncTaskUtils.Task(key->{
                 for (int j = 0; j < 100; j++) {
                     System.out.println(redisIdWorker.nextId(key));
                 }

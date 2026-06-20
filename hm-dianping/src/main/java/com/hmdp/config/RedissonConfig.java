@@ -16,7 +16,7 @@ public class RedissonConfig {
         config.useSingleServer().setAddress("redis://192.168.100.128:6379").setPassword("000000");
         return Redisson.create(config);
     }
-    @Bean
+    /*@Bean
     public RedissonClient redissonClient2(){
         //配置类
         Config config=new Config();
@@ -31,5 +31,5 @@ public class RedissonConfig {
         //添加redis地址
         config.useSingleServer().setAddress("redis://192.168.100.128:6381").setPassword("000000");
         return Redisson.create(config);
-    }
+    }*/
 }
