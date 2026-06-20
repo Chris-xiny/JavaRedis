@@ -12,6 +12,7 @@ import com.hmdp.utils.AsyncTaskUtils;
 import com.hmdp.utils.RedisIdWorker;
 import com.hmdp.utils.SimpleRedisLock;
 import com.hmdp.utils.UserHolder;
+import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,6 +23,7 @@ import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import javax.annotation.PostConstruct;
 import javax.annotation.Resource;
 import java.time.LocalDateTime;
 import java.util.Collection;
@@ -39,6 +41,7 @@ import java.util.concurrent.BlockingQueue;
  * @since 2021-12-22
  */
 
+@Slf4j
 @Service
 public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, VoucherOrder> implements IVoucherOrderService {
 
@@ -61,7 +64,6 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     }
 
     private static final DefaultRedisScript<Long> SECKILL_SCRIPT;
-
     static {
         SECKILL_SCRIPT = new DefaultRedisScript<>();
         SECKILL_SCRIPT.setLocation(new ClassPathResource("seckill.lua"));
@@ -70,6 +72,14 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 
     //阻塞队列
     private final BlockingQueue<VoucherOrder> blockingDeque=new ArrayBlockingQueue<>(1024*1024);
+
+    @PostConstruct
+    private void init(){
+        //开启线程阻塞等待订单并处理
+        asyncTaskUtils.voucherOrderHandleAsync(blockingDeque,selfProxy);
+        asyncTaskUtils.voucherOrderHandleAsync(blockingDeque,selfProxy);
+    }
+
 
     //优惠券秒杀优化版:用Redis配合lua脚本判断库存及一人一单
     @Override
@@ -99,9 +109,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         order.setUserId(userId);
         //4.保存阻塞队列
         blockingDeque.add(order);
-        //5.交给其他线程异步处理订单信息
-        asyncTaskUtils.voucherOrderHandleAsync(order,selfProxy);
-        //6.返回订单信息
+        //5.返回订单信息
         return Result.ok(orderId);
     }
 
@@ -119,7 +127,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
             return;
         }
         //5.2.保存订单到数据库
-        selfProxy.save(order);
+        save(order);
     }
 
     //优惠券秒杀

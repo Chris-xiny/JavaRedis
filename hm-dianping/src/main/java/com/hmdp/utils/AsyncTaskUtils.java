@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
 import java.time.LocalDateTime;
+import java.util.concurrent.BlockingQueue;
 import java.util.function.Function;
 
 import static com.hmdp.utils.RedisConstants.CACHE_SHOP_KEY;
@@ -46,8 +47,15 @@ public class AsyncTaskUtils {
 
     //订单处理线程池
     @Async("voucherOrderExecutor")
-    public void voucherOrderHandleAsync(VoucherOrder order, IVoucherOrderService selfProxy) {
-        selfProxy.voucherOrderHandle(order);
+    public void voucherOrderHandleAsync(BlockingQueue<VoucherOrder> blockingDeque,IVoucherOrderService selfProxy) {
+        while(true){
+            try{
+                VoucherOrder order = blockingDeque.take();
+                selfProxy.voucherOrderHandle(order);
+            } catch (Exception e) {
+                log.error("订单处理异常!",e);
+            }
+        }
     }
 
     //单元测试线程池
