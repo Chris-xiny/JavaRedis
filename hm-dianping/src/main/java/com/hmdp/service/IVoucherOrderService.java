@@ -19,4 +19,6 @@ public interface IVoucherOrderService extends IService<VoucherOrder> {
     Result doSeckill(Long voucherId);
 
     void voucherOrderHandle(VoucherOrder order);
+
+    void handlePendingList(String queueName);
 }

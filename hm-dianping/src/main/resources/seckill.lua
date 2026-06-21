@@ -1,6 +1,7 @@
 --参数
 local voucherId=ARGV[1]
 local userId=ARGV[2]
+local orderId=ARGV[3]
 
 --key
 local stockKey='seckill:stock:'..voucherId
@@ -21,4 +22,7 @@ redis.call('incrby',stockKey,-1)
 
 --下单(保存用户)
 redis.call('sadd',orderKey,userId)
+
+--发送消息到队列中
+redis.call('xadd','stream.orders','*','userId',userId,'voucherId',voucherId,'id',orderId)
 return 0

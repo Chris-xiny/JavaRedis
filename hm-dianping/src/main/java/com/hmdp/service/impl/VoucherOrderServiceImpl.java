@@ -1,5 +1,6 @@
 package com.hmdp.service.impl;
 
+import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.lang.UUID;
 import com.hmdp.dto.Result;
 import com.hmdp.entity.SeckillVoucher;
@@ -18,6 +19,7 @@ import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.data.redis.connection.stream.*;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
@@ -25,9 +27,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.PostConstruct;
 import javax.annotation.Resource;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingDeque;
 import java.util.concurrent.BlockingQueue;
@@ -71,17 +76,67 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     }
 
     //阻塞队列
-    private final BlockingQueue<VoucherOrder> blockingDeque=new ArrayBlockingQueue<>(1024*1024);
+    //private final BlockingQueue<VoucherOrder> blockingDeque=new ArrayBlockingQueue<>(1024*1024);
 
     @PostConstruct
     private void init(){
         //开启线程阻塞等待订单并处理
-        asyncTaskUtils.voucherOrderHandleAsync(blockingDeque,selfProxy);
-        asyncTaskUtils.voucherOrderHandleAsync(blockingDeque,selfProxy);
+        //asyncTaskUtils.voucherOrderHandleAsync(blockingDeque,selfProxy);
+        //asyncTaskUtils.voucherOrderHandleAsync(blockingDeque,selfProxy);
+        asyncTaskUtils.voucherOrderHandleAsync(selfProxy);
+        asyncTaskUtils.voucherOrderHandleAsync(selfProxy);
     }
 
+    //优惠券秒杀优化版:用Redis配合lua脚本判断库存及一人一单,基于redis的stream消息队列将订单处理任务交给线程异步处理
+    @Override
+    public Result seckillVoucher(Long voucherId) {
+        //1.执行lua脚本
+        Long userId = UserHolder.getUser().getId();
+        Long orderId = redisIdWorker.nextId("order");
+        Long result = stringRedisTemplate.execute(
+                SECKILL_SCRIPT,
+                Collections.emptyList(),
+                voucherId.toString(), userId.toString(),String.valueOf(orderId)
+        );
+        //2.判断结果为0
+        int r = result.intValue();
+        if (r != 0) {
+            //2.1.不为0，代表没有资格购买
+            return Result.fail(r==1?"库存不足!":"不能重复购买!");
+        }
+        //2.2.为0，有购买资格，将订单信息保存到阻塞队列
+        //3.返回订单id
+        return Result.ok(orderId);
+    }
 
-    //优惠券秒杀优化版:用Redis配合lua脚本判断库存及一人一单
+    @Override
+    public void handlePendingList(String queueName) {
+        while (true) {
+            try {
+                //获取pending-list中的订单信息
+                List<MapRecord<String, Object, Object>> read = stringRedisTemplate.opsForStream().
+                        read(Consumer.from("g1", "c1"),
+                        StreamReadOptions.empty().count(1),
+                        StreamOffset.create(queueName, ReadOffset.from("0")));
+                //判断消息是否获取成功
+                if (read == null || read.isEmpty()) {
+                    //获取失败：说明没有异常消息，退出
+                    break;
+                }
+                //成功：处理订单
+                //解析消息中的订单信息
+                MapRecord<String, Object, Object> entries = read.get(0);
+                Map<Object, Object> value = entries.getValue();
+                VoucherOrder voucherOrder = BeanUtil.fillBeanWithMap(value, new VoucherOrder(), false);
+                selfProxy.voucherOrderHandle(voucherOrder);
+                //ACK确认
+                stringRedisTemplate.opsForStream().acknowledge(queueName,"g1",entries.getId());
+            } catch (Exception e) {
+                log.error("订单处理异常!", e);
+            }
+        }
+    }
+    /*//优惠券秒杀优化版:用Redis配合lua脚本判断库存及一人一单，利用阻塞队列将订单处理任务交给线程异步处理
     @Override
     public Result seckillVoucher(Long voucherId) {
         //1.执行lua脚本
@@ -111,7 +166,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         blockingDeque.add(order);
         //5.返回订单信息
         return Result.ok(orderId);
-    }
+    }*/
 
     @Transactional
     @Override
